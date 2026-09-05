@@ -56,9 +56,13 @@ fn main() -> Result<()> {
         Config::default()
     };
 
+    // Verifica status do ZRAM no Linux para informar ao usuário
+    let zram_active = std::path::Path::new("/dev/zram0").exists();
+    let zram_status = if zram_active { "ativo ✔" } else { "não detectado (considere ./install.sh --with-zram)" };
+
     println!(
-        "CPU Guardian iniciado | dry_run={} | ação={:?} | intervalo={}ms",
-        cfg.dry_run, cfg.action, cfg.sample_interval_ms
+        "CPU Guardian iniciado | dry_run={} | ação={:?} | intervalo={}ms | ZRAM={}",
+        cfg.dry_run, cfg.action, cfg.sample_interval_ms, zram_status
     );
 
     let running = Arc::new(AtomicBool::new(true));

@@ -55,17 +55,18 @@ E rodar diretamente passando o nome do perfil (ex: `i5-2450m`):
 
 Ele procurará automaticamente por `profiles/i5-2450m.toml`, `profiles/i5-2450m` ou por caminhos diretos. Se nenhum argumento for passado, usará `config.toml` ou `profiles/default.toml`.
 
-### 3. Inicialização Automática com a Máquina (Serviço Systemd)
+### 3. Inicialização Automática com a Máquina + Otimização ZRAM
 
-Para deixar o Cpu Guardian rodando em segundo plano de forma contínua, iniciando automaticamente com seu login no Linux:
+Para deixar o **Cpu Guardian** rodando em segundo plano de forma contínua no boot e, de quebra, **ativar/otimizar o ZRAM automaticamente**:
 
 ```bash
-./install.sh i5-2450m
+./install.sh i5-2450m --with-zram
 ```
 
 O script:
 - Compila o binário otimizado e instala em `~/.local/bin/cpu-guardian`.
 - Ativa a configuração com o perfil desejado em `~/.config/cpu-guardian/config.toml`.
+- **Configura o ZRAM** (memória comprimida com `zstd`, prioridade 100 e `sysctl` anti-HDD-thrashing) caso não esteja instalado/otimizado.
 - Habilita e inicia a unidade systemd do usuário (`cpu-guardian.service`).
 
 #### Comandos úteis do serviço:
