@@ -1,0 +1,18 @@
+# Rust / Cargo build outputs
+target/
+**/*.rs.bk
+Cargo.lock
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local configuration overrides
+config.toml
+
+# System / OS files
+.DS_Store
+Thumbs.db

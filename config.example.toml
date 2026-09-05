@@ -1,0 +1,53 @@
+# CPU Guardian - Configuração para Linux
+
+# Inicie em modo simulação (dry_run = true) para validar o comportamento nos logs antes de aplicar intervenções reais
+dry_run = true
+
+# Intervalo entre coletas em milissegundos
+sample_interval_ms = 1000
+
+# Limiares de ativação e restauração (histerese)
+high_cpu_percent = 80.0
+low_cpu_percent = 60.0
+
+# Número de amostras consecutivas antes de agir e antes de restaurar
+high_samples_before_action = 3
+low_samples_before_restore = 4
+
+# Filtros para identificar os processos ofensores
+minimum_process_cpu_percent = 15.0
+max_managed_processes = 2
+
+# Tipo de ação:
+# "throttle"  -> Aplica política SCHED_IDLE e confina o processo em apenas 1 core (deixa o resto da CPU livre)
+# "handbrake" -> Além do SCHED_IDLE e afinidade, envia SIGSTOP para estancar a CPU imediatamente (freio de mão total)
+action = "throttle"
+
+# Processos que NUNCA devem ser limitados (case-insensitive)
+exclude = [
+  "systemd",
+  "systemd-journald",
+  "systemd-udevd",
+  "kthreadd",
+  "init",
+  "dbus-daemon",
+  "dbus-broker",
+  "sshd",
+  "NetworkManager",
+  "Xorg",
+  "wayland",
+  "gnome-shell",
+  "kwin_wayland",
+  "kwin_x11",
+  "sway",
+  "hyprland",
+  "mutter",
+  "pipewire",
+  "pipewire-pulse",
+  "wireplumber",
+  "pulseaudio",
+  "bash",
+  "zsh",
+  "fish",
+  "cpu-guardian",
+]

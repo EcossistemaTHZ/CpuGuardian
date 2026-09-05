@@ -1,0 +1,20 @@
+[Unit]
+Description=CPU Guardian - Controlador de Carga e Freio de Mao para Linux
+Documentation=https://github.com/EcossistemaTHZ/CpuGuardian
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/cpu-guardian %h/.config/cpu-guardian/config.toml
+Restart=always
+RestartSec=5s
+
+# Prioridade levemente favorecida para o proprio guardiao nunca ser congelado por falta de CPU
+Nice=-5
+
+# Configuracoes de seguranca do systemd
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

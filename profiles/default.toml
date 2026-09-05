@@ -1,0 +1,24 @@
+# Perfil padrão equilibrado para Linux (Desktop / Servidor geral)
+
+dry_run = true
+sample_interval_ms = 1000
+
+high_cpu_percent = 80.0
+low_cpu_percent = 60.0
+
+high_samples_before_action = 3
+low_samples_before_restore = 4
+
+minimum_process_cpu_percent = 15.0
+max_managed_processes = 2
+
+action = "throttle"
+
+exclude = [
+  "systemd", "systemd-journald", "systemd-udevd", "kthreadd", "init",
+  "dbus-daemon", "dbus-broker", "sshd", "NetworkManager",
+  "Xorg", "wayland", "gnome-shell", "kwin_wayland", "kwin_x11",
+  "sway", "hyprland", "mutter",
+  "pipewire", "pipewire-pulse", "wireplumber", "pulseaudio",
+  "bash", "zsh", "fish", "cpu-guardian"
+]
