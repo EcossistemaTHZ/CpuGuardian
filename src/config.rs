@@ -8,8 +8,11 @@ pub struct Config {
     pub dry_run: bool,
     pub sample_interval_ms: u64,
     pub high_cpu_percent: f32,
+    pub panic_cpu_percent: f32,
     pub low_cpu_percent: f32,
+    pub min_available_memory_percent: f32,
     pub high_samples_before_action: u32,
+    pub panic_samples_before_action: u32,
     pub low_samples_before_restore: u32,
     pub minimum_process_cpu_percent: f32,
     pub max_managed_processes: usize,
@@ -20,10 +23,12 @@ pub struct Config {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
-    /// Despriorização severa (SCHED_IDLE) + Confinamento a 1 único núcleo de CPU
+    /// Despriorização severa (SCHED_IDLE/BATCH) + Confinamento a 1 único núcleo de CPU
     Throttle,
-    /// Freio de mão emergencial (SCHED_IDLE + 1 núcleo + congelamento imediato via SIGSTOP)
+    /// Freio de mão emergencial total constante
     Handbrake,
+    /// Escalação Dinâmica: Throttle sob carga alta, e Handbrake (SIGSTOP) sob risco de colapso (>panic_cpu_percent ou RAM crítica)
+    Dynamic,
 }
 
 impl Default for Config {
@@ -31,13 +36,16 @@ impl Default for Config {
         Self {
             dry_run: true,
             sample_interval_ms: 1000,
-            high_cpu_percent: 80.0,
-            low_cpu_percent: 60.0,
-            high_samples_before_action: 3,
+            high_cpu_percent: 78.0,
+            panic_cpu_percent: 94.0,
+            low_cpu_percent: 58.0,
+            min_available_memory_percent: 8.0,
+            high_samples_before_action: 2,
+            panic_samples_before_action: 2,
             low_samples_before_restore: 4,
             minimum_process_cpu_percent: 15.0,
             max_managed_processes: 2,
-            action: Action::Throttle,
+            action: Action::Dynamic,
             exclude: vec![
                 // Serviços essenciais do sistema e init
                 "systemd", "systemd-journald", "systemd-udevd", "kthreadd", "init",
@@ -116,10 +124,14 @@ impl Config {
     fn validate(&self) -> Result<()> {
         anyhow::ensure!(self.low_cpu_percent < self.high_cpu_percent,
             "low_cpu_percent deve ser menor que high_cpu_percent");
+        anyhow::ensure!(self.high_cpu_percent <= self.panic_cpu_percent,
+            "high_cpu_percent deve ser menor ou igual a panic_cpu_percent");
         anyhow::ensure!((100..=60_000).contains(&self.sample_interval_ms),
             "sample_interval_ms deve estar entre 100 e 60000");
-        anyhow::ensure!(self.high_cpu_percent <= 100.0 && self.low_cpu_percent >= 0.0,
+        anyhow::ensure!(self.panic_cpu_percent <= 100.0 && self.low_cpu_percent >= 0.0,
             "limites de CPU devem estar entre 0 e 100");
+        anyhow::ensure!(self.min_available_memory_percent >= 0.0 && self.min_available_memory_percent <= 50.0,
+            "min_available_memory_percent deve estar entre 0 e 50");
         anyhow::ensure!(self.max_managed_processes > 0,
             "max_managed_processes deve ser maior que zero");
         Ok(())

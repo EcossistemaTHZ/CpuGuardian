@@ -81,27 +81,53 @@ fn main() -> Result<()> {
         thread::sleep(interval);
         system.refresh_cpu();
         system.refresh_processes();
+        system.refresh_memory();
 
         let cpu = system.global_cpu_info().cpu_usage();
+        let total_mem = system.total_memory();
+        let avail_mem = system.available_memory();
+        let avail_mem_pct = if total_mem > 0 {
+            (avail_mem as f32 / total_mem as f32) * 100.0
+        } else {
+            100.0
+        };
+
+        let mem_critical = avail_mem_pct <= cfg.min_available_memory_percent;
 
         // Limpa processos que já morreram por conta própria
         managed.retain(|pid, _| system.process(Pid::from_u32(*pid)).is_some());
 
+        let mem_alert = if mem_critical { " [RAM CRÍTICA!]" } else { "" };
         println!(
-            "CPU total: {:>5.1}% | processos freados: {}",
-            cpu,
-            managed.len()
+            "CPU: {:>5.1}% | RAM Disp: {:>4.1}%{} | processos freados: {}",
+            cpu, avail_mem_pct, mem_alert, managed.len()
         );
 
-        match governor.update(
+        let decision = governor.update(
             cpu,
+            mem_critical,
             cfg.high_cpu_percent,
+            cfg.panic_cpu_percent,
             cfg.low_cpu_percent,
             cfg.high_samples_before_action,
+            cfg.panic_samples_before_action,
             cfg.low_samples_before_restore,
-        ) {
-            Decision::Throttle => throttle_hottest(&system, &cfg, &mut managed),
-            Decision::Restore => restore_all(&cfg, &mut managed),
+        );
+
+        match decision {
+            Decision::Throttle => {
+                let freeze = cfg.action == Action::Handbrake;
+                throttle_candidates(&system, &cfg, &mut managed, freeze);
+            }
+            Decision::PanicFreeze => {
+                println!("🔥 SITUAÇÃO DE PÂNICO / QUASE COLAPSO! Acionando Handbrake (SIGSTOP) em todos os processos monitorados...");
+                escalate_to_freeze(&cfg, &mut managed);
+                // Também inclui novos candidatos ofensores se ainda houver slots
+                throttle_candidates(&system, &cfg, &mut managed, true);
+            }
+            Decision::Restore => {
+                restore_all(&cfg, &mut managed);
+            }
             Decision::Hold => {}
         }
     }
@@ -111,7 +137,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn throttle_hottest(system: &System, cfg: &Config, managed: &mut HashMap<u32, OriginalState>) {
+fn throttle_candidates(
+    system: &System,
+    cfg: &Config,
+    managed: &mut HashMap<u32, OriginalState>,
+    freeze: bool,
+) {
     let own_pid = std::process::id();
     let mut candidates: Vec<_> = system
         .processes()
@@ -126,9 +157,7 @@ fn throttle_hottest(system: &System, cfg: &Config, managed: &mut HashMap<u32, Or
 
     candidates.sort_by(|a, b| b.1.cpu_usage().total_cmp(&a.1.cpu_usage()));
 
-    let freeze = cfg.action == Action::Handbrake;
-
-    for (pid, process) in candidates.into_iter().take(cfg.max_managed_processes) {
+    for (pid, process) in candidates.into_iter().take(cfg.max_managed_processes.saturating_sub(managed.len())) {
         let action_name = if freeze {
             "FREIO TOTAL (SCHED_IDLE + 1 Core + SIGSTOP)"
         } else {
@@ -136,7 +165,7 @@ fn throttle_hottest(system: &System, cfg: &Config, managed: &mut HashMap<u32, Or
         };
 
         println!(
-            "🚨 ALTA CARGA DETECTADA: {} (PID {}, CPU {:.1}%) -> Aplicando {}",
+            "🚨 ALTA CARGA: {} (PID {}, CPU {:.1}%) -> Aplicando {}",
             process.name(),
             pid,
             process.cpu_usage(),
@@ -154,6 +183,20 @@ fn throttle_hottest(system: &System, cfg: &Config, managed: &mut HashMap<u32, Or
                 println!("   ✓ PID {} freado com sucesso.", pid);
             }
             Err(e) => eprintln!("   ⚠ Aviso ao frear PID {}: {e}", pid),
+        }
+    }
+}
+
+fn escalate_to_freeze(cfg: &Config, managed: &mut HashMap<u32, OriginalState>) {
+    if cfg.dry_run {
+        return;
+    }
+    for (pid, state) in managed.iter_mut() {
+        if !state.is_frozen {
+            if let Ok(()) = platform::freeze(*pid) {
+                state.is_frozen = true;
+                println!("   ⏸ PID {} pausado via SIGSTOP para alívio imediato do sistema.", pid);
+            }
         }
     }
 }

@@ -4,15 +4,19 @@ dry_run = true
 sample_interval_ms = 1000
 
 high_cpu_percent = 80.0
+panic_cpu_percent = 95.0
 low_cpu_percent = 60.0
 
+min_available_memory_percent = 8.0
+
 high_samples_before_action = 3
+panic_samples_before_action = 2
 low_samples_before_restore = 4
 
 minimum_process_cpu_percent = 15.0
 max_managed_processes = 2
 
-action = "throttle"
+action = "dynamic"
 
 exclude = [
   "systemd", "systemd-journald", "systemd-udevd", "kthreadd", "init",
@@ -20,5 +24,5 @@ exclude = [
   "Xorg", "wayland", "gnome-shell", "kwin_wayland", "kwin_x11",
   "sway", "hyprland", "mutter",
   "pipewire", "pipewire-pulse", "wireplumber", "pulseaudio",
-  "bash", "zsh", "fish", "cpu-guardian"
+  "bash", "zsh", "fish", "cpu-guardian", "earlyoom"
 ]

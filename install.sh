@@ -72,16 +72,34 @@ EOF
     fi
 }
 
-# Pergunta ou executa o setup de ZRAM se solicitado ou se o usuário tiver sudo
+# --- Sentinela Anti-Travamento (EarlyOOM) ---
+setup_earlyoom() {
+    echo ""
+    echo "==> Verificando sentinela EarlyOOM..."
+    if ! command -v earlyoom >/dev/null 2>&1; then
+        echo "--> Instalando earlyoom para proteção final contra congelamento de memória..."
+        if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y earlyoom
+        fi
+    fi
+    if command -v systemctl >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+        sudo systemctl enable --now earlyoom >/dev/null 2>&1 || true
+        echo "✔ EarlyOOM ativado como serviço!"
+    fi
+}
+
+# Pergunta ou executa o setup de ZRAM e EarlyOOM se solicitado ou se o usuário tiver sudo
 if [ "$INSTALL_ZRAM" = "true" ] || [ "$2" = "--with-zram" ] || [ "$1" = "--with-zram" ]; then
     setup_zram
+    setup_earlyoom
 else
     # Se já temos sudo sem senha ou se o usuário quiser, configura zram
     if sudo -n true 2>/dev/null; then
         setup_zram
+        setup_earlyoom
     else
         echo ""
-        echo "==> Dica: para instalar/otimizar ZRAM automaticamente com o CPU Guardian, rode:"
+        echo "==> Dica: para instalar/otimizar ZRAM e EarlyOOM automaticamente com o CPU Guardian, rode:"
         echo "    ./install.sh $PROFILE --with-zram"
     fi
 fi

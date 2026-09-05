@@ -1,30 +1,29 @@
 # Perfil recomendado para Intel Core i5-2450M (2 Cores / 4 Threads - Sandy Bridge)
-# Otimizado para evitar colapso de responsividade e throttling térmico em notebooks
+# Otimizado para máxima estabilidade térmica e prevenção de congelamentos com ZRAM
 
 dry_run = false
 sample_interval_ms = 1000
 
-# Limiares ajustados para 4 threads:
-# Carga sustentada em ~75-78% já compromete os 2 núcleos físicos
+# Limiares de CPU para o i5-2450M:
 high_cpu_percent = 78.0
+# Se atingir 94% por 2 amostras seguidas, entra em modo de PÂNICO e puxa o SIGSTOP (Handbrake)
+panic_cpu_percent = 94.0
 low_cpu_percent = 55.0
 
-# Reatividade rápida (2 segundos em alta carga para intervir)
-high_samples_before_action = 2
+# Proteção de memória para trabalhar em harmonia com ZRAM:
+# Se a memória física disponível cair para menos de 8%, aciona freio preventivo para dar tempo ao ZRAM
+min_available_memory_percent = 8.0
 
-# Histerese de resfriamento: aguarda 4 segundos de baixa carga para restaurar
+# Amostras para ação:
+high_samples_before_action = 2
+panic_samples_before_action = 2
 low_samples_before_restore = 4
 
-# Identifica processos consumindo mais de 20% (equivalente a quase 1 thread cheia)
 minimum_process_cpu_percent = 20.0
-
-# Em uma CPU dual-core, controlar 1 a 2 processos já desafoga a máquina inteira
 max_managed_processes = 2
 
-# Ação recomendada:
-# "throttle" -> confina ao último core e aplica SCHED_BATCH (preserva o sistema e o áudio)
-# "handbrake" -> se o notebook estiver desligando por calor, use handbrake (SIGSTOP/SIGCONT)
-action = "throttle"
+# Modo dinâmico: aplica Throttle (SCHED_BATCH + 1 Core) sob carga alta e escala para SIGSTOP sob pânico
+action = "dynamic"
 
 exclude = [
   "systemd", "systemd-journald", "systemd-udevd", "kthreadd", "init",
@@ -32,5 +31,5 @@ exclude = [
   "Xorg", "wayland", "gnome-shell", "kwin_wayland", "kwin_x11",
   "sway", "hyprland", "mutter",
   "pipewire", "pipewire-pulse", "wireplumber", "pulseaudio",
-  "bash", "zsh", "fish", "cpu-guardian"
+  "bash", "zsh", "fish", "cpu-guardian", "earlyoom"
 ]
