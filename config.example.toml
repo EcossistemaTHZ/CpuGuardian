@@ -8,10 +8,23 @@ sample_interval_ms = 1000
 
 # Limiares de ativação e restauração (histerese)
 high_cpu_percent = 80.0
+panic_cpu_percent = 95.0
 low_cpu_percent = 60.0
+
+# Temperatura obtida de /sys/class/hwmon; ajuste conforme o processador.
+thermal_high_celsius = 82.0
+thermal_panic_celsius = 90.0
+thermal_emergency_celsius = 97.0
+
+# 100 = só desprioriza; 75 = mantém 3 de 4 CPUs lógicas, por exemplo.
+throttle_cpu_percent = 100
+panic_cpu_percent_limit = 75
+
+min_available_memory_percent = 8.0
 
 # Número de amostras consecutivas antes de agir e antes de restaurar
 high_samples_before_action = 3
+panic_samples_before_action = 2
 low_samples_before_restore = 4
 
 # Filtros para identificar os processos ofensores
@@ -19,9 +32,11 @@ minimum_process_cpu_percent = 15.0
 max_managed_processes = 2
 
 # Tipo de ação:
-# "throttle"  -> Aplica política SCHED_IDLE e confina o processo em apenas 1 core (deixa o resto da CPU livre)
-# "handbrake" -> Além do SCHED_IDLE e afinidade, envia SIGSTOP para estancar a CPU imediatamente (freio de mão total)
-action = "throttle"
+# "nice_only" -> somente SCHED_BATCH, sem reduzir paralelismo
+# "throttle"  -> aplica o percentual de panic_cpu_percent_limit
+# "dynamic"   -> preserva paralelismo e limita afinidade apenas quando estiver quente
+# "handbrake" -> também envia SIGSTOP
+action = "dynamic"
 
 # Processos que NUNCA devem ser limitados (case-insensitive)
 exclude = [

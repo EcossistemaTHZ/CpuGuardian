@@ -17,21 +17,27 @@ pub struct OriginalState {
 
 /// Freia o processo ofensor:
 /// 1. Coleta o estado de agendamento e afinidade original.
-/// 2. Converte a política do processo para SCHED_IDLE (só consome se a CPU estiver 100% ociosa).
-/// 3. Isola a afinidade para um único núcleo (ex: último core disponível), liberando o resto do sistema.
+/// 2. Converte a política do processo para SCHED_BATCH (ou SCHED_IDLE como root).
+/// 3. Opcionalmente reduz a afinidade por percentual, preservando paralelismo.
 /// 4. Opcionalmente, aplica o "freio total" congelando com SIGSTOP imediatamente.
-pub fn throttle(pid: u32, freeze: bool) -> Result<OriginalState> {
+pub fn throttle(pid: u32, cpu_percent: u8, freeze: bool) -> Result<OriginalState> {
     let nix_pid = Pid::from_raw(pid as i32);
 
     // 1. Obter política e prioridade atuais
     let mut param = MaybeUninit::<libc::sched_param>::zeroed();
     let policy = unsafe { libc::sched_getscheduler(pid as libc::pid_t) };
     if policy < 0 {
-        bail!("não foi possível ler política de agendamento do PID {pid}: {}", std::io::Error::last_os_error());
+        bail!(
+            "não foi possível ler política de agendamento do PID {pid}: {}",
+            std::io::Error::last_os_error()
+        );
     }
 
     if unsafe { libc::sched_getparam(pid as libc::pid_t, param.as_mut_ptr()) } < 0 {
-        bail!("não foi possível ler sched_param do PID {pid}: {}", std::io::Error::last_os_error());
+        bail!(
+            "não foi possível ler sched_param do PID {pid}: {}",
+            std::io::Error::last_os_error()
+        );
     }
     let param = unsafe { param.assume_init() };
 
@@ -53,18 +59,22 @@ pub fn throttle(pid: u32, freeze: bool) -> Result<OriginalState> {
     //   e pode ser revertido livremente para SCHED_OTHER sem necessitar de root/CAP_SYS_NICE.
     // - SCHED_IDLE é ainda mais agressivo, mas sua reversão posterior requer CAP_SYS_NICE/root.
     let is_root = unsafe { libc::geteuid() == 0 };
-    let target_policy = if is_root { libc::SCHED_IDLE } else { libc::SCHED_BATCH };
+    let target_policy = if is_root {
+        libc::SCHED_IDLE
+    } else {
+        libc::SCHED_BATCH
+    };
     let sched_param = libc::sched_param { sched_priority: 0 };
-    unsafe {
-        libc::sched_setscheduler(pid as libc::pid_t, target_policy, &sched_param);
+    if unsafe { libc::sched_setscheduler(pid as libc::pid_t, target_policy, &sched_param) } < 0 {
+        bail!(
+            "falha ao alterar política do PID {pid}: {}",
+            std::io::Error::last_os_error()
+        );
     }
 
-    // 4. Confinar o processo a apenas 1 núcleo para salvar a máquina
-    // Escolhe o último core disponível para deixar cores 0..n livres para a interface gráfica e I/O
-    let target_cpu = original_affinity.last().copied().unwrap_or(0);
-    let mut restricted_cpuset = CpuSet::new();
-    if restricted_cpuset.set(target_cpu).is_ok() {
-        let _ = sched_setaffinity(nix_pid, &restricted_cpuset);
+    // 4. Limite progressivo. 100% preserva todo o paralelismo e aplica apenas SCHED_BATCH.
+    if cpu_percent < 100 {
+        apply_affinity_percent(nix_pid, &original_affinity, cpu_percent)?;
     }
 
     // 5. Freio de mão emergencial (SIGSTOP) se solicitado
@@ -83,6 +93,27 @@ pub fn throttle(pid: u32, freeze: bool) -> Result<OriginalState> {
     })
 }
 
+fn apply_affinity_percent(pid: Pid, original: &[usize], cpu_percent: u8) -> Result<()> {
+    if original.is_empty() {
+        bail!("máscara de afinidade vazia para PID {}", pid);
+    }
+    let keep = ((original.len() * cpu_percent as usize) + 99) / 100;
+    let keep = keep.clamp(1, original.len());
+    let mut cpuset = CpuSet::new();
+    // Mantém as CPUs de índice mais alto e deixa CPU0 livre para kernel/interface.
+    for &cpu in original.iter().rev().take(keep) {
+        cpuset
+            .set(cpu)
+            .with_context(|| format!("CPU lógica {cpu} inválida"))?;
+    }
+    sched_setaffinity(pid, &cpuset)
+        .with_context(|| format!("falha ao aplicar afinidade progressiva ao PID {}", pid))
+}
+
+pub fn limit_affinity(pid: u32, state: &OriginalState, cpu_percent: u8) -> Result<()> {
+    apply_affinity_percent(Pid::from_raw(pid as i32), &state.affinity, cpu_percent)
+}
+
 /// Restaura o processo ao estado original anterior ao throttle
 pub fn restore(pid: u32, state: &OriginalState) -> Result<()> {
     let nix_pid = Pid::from_raw(pid as i32);
@@ -98,16 +129,28 @@ pub fn restore(pid: u32, state: &OriginalState) -> Result<()> {
         for &cpu in &state.affinity {
             let _ = cpuset.set(cpu);
         }
-        let _ = sched_setaffinity(nix_pid, &cpuset);
+        sched_setaffinity(nix_pid, &cpuset)
+            .with_context(|| format!("falha ao restaurar afinidade do PID {pid}"))?;
     }
 
     // Restaura política de escalonamento original
-    let param = libc::sched_param { sched_priority: state.priority };
-    unsafe {
+    let param = libc::sched_param {
+        sched_priority: state.priority,
+    };
+    let result = unsafe {
         // Se a política anterior era SCHED_OTHER (0) ou SCHED_BATCH (3) ou SCHED_IDLE (5)
-        let target_policy = if state.policy < 0 { libc::SCHED_OTHER } else { state.policy };
-        libc::sched_setscheduler(pid as libc::pid_t, target_policy, &param);
-        libc::setpriority(libc::PRIO_PROCESS, pid, 0);
+        let target_policy = if state.policy < 0 {
+            libc::SCHED_OTHER
+        } else {
+            state.policy
+        };
+        libc::sched_setscheduler(pid as libc::pid_t, target_policy, &param)
+    };
+    if result < 0 {
+        bail!(
+            "falha ao restaurar política do PID {pid}: {}",
+            std::io::Error::last_os_error()
+        );
     }
 
     Ok(())

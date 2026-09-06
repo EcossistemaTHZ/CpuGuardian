@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
@@ -11,6 +14,11 @@ pub struct Config {
     pub panic_cpu_percent: f32,
     pub low_cpu_percent: f32,
     pub min_available_memory_percent: f32,
+    pub thermal_high_celsius: f32,
+    pub thermal_panic_celsius: f32,
+    pub thermal_emergency_celsius: f32,
+    pub throttle_cpu_percent: u8,
+    pub panic_cpu_percent_limit: u8,
     pub high_samples_before_action: u32,
     pub panic_samples_before_action: u32,
     pub low_samples_before_restore: u32,
@@ -23,6 +31,8 @@ pub struct Config {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
+    /// Apenas SCHED_BATCH; não reduz paralelismo.
+    NiceOnly,
     /// Despriorização severa (SCHED_IDLE/BATCH) + Confinamento a 1 único núcleo de CPU
     Throttle,
     /// Freio de mão emergencial total constante
@@ -40,6 +50,11 @@ impl Default for Config {
             panic_cpu_percent: 94.0,
             low_cpu_percent: 58.0,
             min_available_memory_percent: 8.0,
+            thermal_high_celsius: 82.0,
+            thermal_panic_celsius: 90.0,
+            thermal_emergency_celsius: 97.0,
+            throttle_cpu_percent: 100,
+            panic_cpu_percent_limit: 50,
             high_samples_before_action: 2,
             panic_samples_before_action: 2,
             low_samples_before_restore: 4,
@@ -48,17 +63,39 @@ impl Default for Config {
             action: Action::Dynamic,
             exclude: vec![
                 // Serviços essenciais do sistema e init
-                "systemd", "systemd-journald", "systemd-udevd", "kthreadd", "init",
+                "systemd",
+                "systemd-journald",
+                "systemd-udevd",
+                "kthreadd",
+                "init",
                 // Barramentos e rede
-                "dbus-daemon", "dbus-broker", "sshd", "NetworkManager",
+                "dbus-daemon",
+                "dbus-broker",
+                "sshd",
+                "NetworkManager",
                 // Servidores de display e compositores (evitar congelar a interface gráfica)
-                "Xorg", "wayland", "gnome-shell", "kwin_wayland", "kwin_x11",
-                "sway", "hyprland", "mutter",
+                "Xorg",
+                "wayland",
+                "gnome-shell",
+                "kwin_wayland",
+                "kwin_x11",
+                "sway",
+                "hyprland",
+                "mutter",
                 // Áudio e multimídia (evitar engasgos de som)
-                "pipewire", "pipewire-pulse", "wireplumber", "pulseaudio",
+                "pipewire",
+                "pipewire-pulse",
+                "wireplumber",
+                "pulseaudio",
                 // Shells e o próprio CpuGuardian
-                "bash", "zsh", "fish", "cpu-guardian",
-            ].into_iter().map(str::to_owned).collect(),
+                "bash",
+                "zsh",
+                "fish",
+                "cpu-guardian",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
         }
     }
 }
@@ -106,34 +143,58 @@ impl Config {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let text = fs::read_to_string(path)
-            .with_context(|| {
-                let available = Self::list_available_profiles();
-                let hint = if !available.is_empty() {
-                    format!("\nPerfis disponíveis na pasta profiles/: {}", available.join(", "))
-                } else {
-                    String::new()
-                };
-                format!("não foi possível ler {}{hint}", path.display())
-            })?;
+        let text = fs::read_to_string(path).with_context(|| {
+            let available = Self::list_available_profiles();
+            let hint = if !available.is_empty() {
+                format!(
+                    "\nPerfis disponíveis na pasta profiles/: {}",
+                    available.join(", ")
+                )
+            } else {
+                String::new()
+            };
+            format!("não foi possível ler {}{hint}", path.display())
+        })?;
         let cfg: Self = toml::from_str(&text).context("configuração TOML inválida")?;
         cfg.validate()?;
         Ok(cfg)
     }
 
     fn validate(&self) -> Result<()> {
-        anyhow::ensure!(self.low_cpu_percent < self.high_cpu_percent,
-            "low_cpu_percent deve ser menor que high_cpu_percent");
-        anyhow::ensure!(self.high_cpu_percent <= self.panic_cpu_percent,
-            "high_cpu_percent deve ser menor ou igual a panic_cpu_percent");
-        anyhow::ensure!((100..=60_000).contains(&self.sample_interval_ms),
-            "sample_interval_ms deve estar entre 100 e 60000");
-        anyhow::ensure!(self.panic_cpu_percent <= 100.0 && self.low_cpu_percent >= 0.0,
-            "limites de CPU devem estar entre 0 e 100");
-        anyhow::ensure!(self.min_available_memory_percent >= 0.0 && self.min_available_memory_percent <= 50.0,
-            "min_available_memory_percent deve estar entre 0 e 50");
-        anyhow::ensure!(self.max_managed_processes > 0,
-            "max_managed_processes deve ser maior que zero");
+        anyhow::ensure!(
+            self.low_cpu_percent < self.high_cpu_percent,
+            "low_cpu_percent deve ser menor que high_cpu_percent"
+        );
+        anyhow::ensure!(
+            self.high_cpu_percent <= self.panic_cpu_percent,
+            "high_cpu_percent deve ser menor ou igual a panic_cpu_percent"
+        );
+        anyhow::ensure!(
+            (100..=60_000).contains(&self.sample_interval_ms),
+            "sample_interval_ms deve estar entre 100 e 60000"
+        );
+        anyhow::ensure!(
+            self.panic_cpu_percent <= 100.0 && self.low_cpu_percent >= 0.0,
+            "limites de CPU devem estar entre 0 e 100"
+        );
+        anyhow::ensure!(
+            self.min_available_memory_percent >= 0.0 && self.min_available_memory_percent <= 50.0,
+            "min_available_memory_percent deve estar entre 0 e 50"
+        );
+        anyhow::ensure!(
+            self.thermal_high_celsius < self.thermal_panic_celsius
+                && self.thermal_panic_celsius < self.thermal_emergency_celsius,
+            "limiares térmicos devem obedecer high < panic < emergency"
+        );
+        anyhow::ensure!(
+            (1..=100).contains(&self.throttle_cpu_percent)
+                && (1..=100).contains(&self.panic_cpu_percent_limit),
+            "percentuais de limite devem estar entre 1 e 100"
+        );
+        anyhow::ensure!(
+            self.max_managed_processes > 0,
+            "max_managed_processes deve ser maior que zero"
+        );
         Ok(())
     }
 

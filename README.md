@@ -6,15 +6,17 @@ Controlador de carga e freio de mão de emergência em Rust para evitar colapso 
 
 ## Como Funciona o "Freio de Mão"
 
-Diferente do simples ajuste de `nice` (que não impede processos pesados com múltiplas threads de travar o desktop), o Cpu Guardian emprega intervenções reais no escalonador e na afinidade do Linux:
+Diferente de um limitador fixo, o Cpu Guardian combina carga, memória e temperatura real para aplicar intervenções progressivas:
 
-1. **Confinamento de Núcleos (`sched_setaffinity`)**:
-   - Confinará o processo ofensor a **1 único núcleo** de CPU (o último disponível), liberando imediatamente os demais núcleos para o sistema operacional, áudio e interface gráfica.
+1. **Controle progressivo (`sched_setaffinity`)**:
+   - Carga alta comum apenas desprioriza o processo e preserva o paralelismo. A afinidade é reduzida somente quando o sensor térmico indica calor; o percentual é configurável.
 2. **Despriorização via Escalonador (`SCHED_BATCH` / `SCHED_IDLE`)**:
    - Aplica política `SCHED_BATCH` (ou `SCHED_IDLE` se executado como root), instruindo o Completely Fair Scheduler (CFS) do Linux a penalizar o processo em favor de processos interativos.
-3. **Freio Total de Emergência (`SIGSTOP` / `SIGCONT`)**:
-   - No modo `action = "handbrake"`, além do confinamento e escalonador, envia o sinal `SIGSTOP` imediatamente quando o sistema atinge o limiar crítico, estancando a CPU a 0% no mesmo instante. Ao normalizar ou no encerramento, envia `SIGCONT`.
-4. **100% Reversível**:
+3. **Temperatura real (`hwmon` / `thermal_zone`)**:
+   - Lê `coretemp` em `/sys/class/hwmon` e usa `/sys/class/thermal` como fallback. Carga de 100% sozinha não é tratada como superaquecimento quando existe um sensor válido.
+4. **Freio Total de Emergência (`SIGSTOP` / `SIGCONT`)**:
+   - No modo dinâmico, `SIGSTOP` fica reservado para temperatura de emergência ou pressão crítica de memória. Ao normalizar ou no encerramento, envia `SIGCONT`.
+5. **100% Reversível**:
    - Salva a máscara de afinidade e a política de escalonamento original.
    - Restaura o estado anterior quando a carga estabiliza ou ao pressionar `Ctrl+C`.
 
@@ -24,8 +26,22 @@ Diferente do simples ajuste de `nice` (que não impede processos pesados com mú
 
 Configuráveis no `config.toml` através do campo `action`:
 
-- `throttle` (Recomendado): Confinamento estrito a 1 núcleo + política `SCHED_BATCH`/`SCHED_IDLE`. O processo continua executando, mas não monopoliza a máquina.
+- `throttle`: aplica `SCHED_BATCH`/`SCHED_IDLE` e o percentual configurado em `panic_cpu_percent_limit`.
 - `handbrake`: Freio total de emergência. Aplica throttle e congela o processo com `SIGSTOP` até o sistema esfriar/desafogar.
+- `nice_only`: aplica somente `SCHED_BATCH`/`SCHED_IDLE`, sem reduzir afinidade.
+- `dynamic` (recomendado): preserva todos os CPUs lógicos sob carga comum, reduz afinidade quando há calor real e congela somente em emergência.
+
+### Perfil i5-2450M
+
+O perfil mantém as 4 threads durante uma compilação normal. Aos 82 °C começa a
+proteção térmica e, aos 90 °C, mantém 75% das CPUs lógicas disponíveis (3 de 4).
+O freio total fica reservado para 97 °C ou memória crítica. Confira se o sensor
+está disponível no log (`Temp: N/D` indica que não foi encontrado):
+
+```bash
+sudo modprobe coretemp
+cat /sys/class/hwmon/hwmon*/temp*_input
+```
 
 ---
 

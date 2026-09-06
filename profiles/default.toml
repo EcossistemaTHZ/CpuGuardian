@@ -9,6 +9,12 @@ low_cpu_percent = 60.0
 
 min_available_memory_percent = 8.0
 
+thermal_high_celsius = 82.0
+thermal_panic_celsius = 90.0
+thermal_emergency_celsius = 97.0
+throttle_cpu_percent = 100
+panic_cpu_percent_limit = 75
+
 high_samples_before_action = 3
 panic_samples_before_action = 2
 low_samples_before_restore = 4

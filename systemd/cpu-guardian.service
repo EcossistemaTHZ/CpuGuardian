@@ -9,8 +9,8 @@ ExecStart=%h/.local/bin/cpu-guardian %h/.config/cpu-guardian/config.toml
 Restart=always
 RestartSec=5s
 
-# Prioridade levemente favorecida para o proprio guardiao nunca ser congelado por falta de CPU
-Nice=-5
+# Serviços de usuário normalmente não têm permissão para nice negativo.
+Nice=0
 
 # Configuracoes de seguranca do systemd
 ProtectSystem=full

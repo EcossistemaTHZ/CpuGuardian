@@ -5,24 +5,34 @@ dry_run = false
 sample_interval_ms = 1000
 
 # Limiares de CPU para o i5-2450M:
-high_cpu_percent = 78.0
-# Se atingir 94% por 2 amostras seguidas, entra em modo de PÂNICO e puxa o SIGSTOP (Handbrake)
-panic_cpu_percent = 94.0
-low_cpu_percent = 55.0
+high_cpu_percent = 90.0
+# Fallback quando nenhum sensor térmico estiver disponível.
+panic_cpu_percent = 99.0
+low_cpu_percent = 70.0
+
+# Sandy Bridge: controle guiado por temperatura real via coretemp/hwmon.
+thermal_high_celsius = 82.0
+thermal_panic_celsius = 90.0
+thermal_emergency_celsius = 97.0
+
+# Carga alta comum preserva as 4 threads. Sob calor, mantém 3 de 4 threads.
+throttle_cpu_percent = 100
+panic_cpu_percent_limit = 75
 
 # Proteção de memória para trabalhar em harmonia com ZRAM:
 # Se a memória física disponível cair para menos de 8%, aciona freio preventivo para dar tempo ao ZRAM
 min_available_memory_percent = 8.0
 
 # Amostras para ação:
-high_samples_before_action = 2
-panic_samples_before_action = 2
-low_samples_before_restore = 4
+high_samples_before_action = 8
+# Sem sensor, só limita após 30 s contínuos em 99%; evita punir builds normais cedo demais.
+panic_samples_before_action = 30
+low_samples_before_restore = 8
 
-minimum_process_cpu_percent = 20.0
-max_managed_processes = 2
+minimum_process_cpu_percent = 25.0
+max_managed_processes = 1
 
-# Modo dinâmico: aplica Throttle (SCHED_BATCH + 1 Core) sob carga alta e escala para SIGSTOP sob pânico
+# Modo dinâmico: SCHED_BATCH sob carga; afinidade só com calor; SIGSTOP só em emergência.
 action = "dynamic"
 
 exclude = [
