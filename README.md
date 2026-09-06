@@ -69,6 +69,15 @@ E rodar diretamente passando o nome do perfil (ex: `i5-2450m`):
 ./target/release/cpu-guardian i5-2450m
 ```
 
+Para um Intel Core 2 Duo E8500:
+
+```bash
+./install.sh e8500
+```
+
+O perfil `e8500` mantém os dois núcleos durante carga comum e reduz a afinidade
+para um núcleo somente quando a leitura térmica ultrapassa os limites configurados.
+
 Ele procurará automaticamente por `profiles/i5-2450m.toml`, `profiles/i5-2450m` ou por caminhos diretos. Se nenhum argumento for passado, usará `config.toml` ou `profiles/default.toml`.
 
 ### 3. Inicialização Automática com a Máquina + Otimização ZRAM

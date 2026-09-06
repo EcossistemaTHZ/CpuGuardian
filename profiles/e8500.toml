@@ -1,0 +1,40 @@
+# Perfil para Intel Core 2 Duo E8500 (2 cores / 2 threads, Wolfdale)
+# Mantém os dois núcleos durante carga normal e reduz para um somente sob calor.
+
+dry_run = false
+sample_interval_ms = 1000
+
+# Compilações usam 100% legitimamente; carga sozinha aplica apenas SCHED_BATCH.
+high_cpu_percent = 92.0
+panic_cpu_percent = 99.0
+low_cpu_percent = 70.0
+
+# Limites conservadores baseados na maior leitura dos cores via coretemp/hwmon.
+thermal_high_celsius = 72.0
+thermal_panic_celsius = 80.0
+thermal_emergency_celsius = 90.0
+
+min_available_memory_percent = 8.0
+
+# Evita reagir a picos curtos. Sem sensor, o fallback exige 30 s em 99%.
+high_samples_before_action = 8
+panic_samples_before_action = 30
+low_samples_before_restore = 8
+
+minimum_process_cpu_percent = 25.0
+max_managed_processes = 1
+
+# 100% = mantém os 2 cores sob carga; 50% = mantém 1 core sob calor.
+throttle_cpu_percent = 100
+panic_cpu_percent_limit = 50
+
+action = "dynamic"
+
+exclude = [
+  "systemd", "systemd-journald", "systemd-udevd", "kthreadd", "init",
+  "dbus-daemon", "dbus-broker", "sshd", "NetworkManager",
+  "Xorg", "wayland", "gnome-shell", "kwin_wayland", "kwin_x11",
+  "sway", "hyprland", "mutter",
+  "pipewire", "pipewire-pulse", "wireplumber", "pulseaudio",
+  "bash", "zsh", "fish", "cpu-guardian", "earlyoom"
+]
